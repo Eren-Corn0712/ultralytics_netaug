@@ -10,7 +10,7 @@ import torch.nn as nn
 
 from ultralytics.nn.modules import (C1, C2, C3, C3TR, SPP, SPPF, Bottleneck, BottleneckCSP, C2f, C3Ghost, C3x, Classify,
                                     Concat, Conv, ConvTranspose, Detect, DWConv, DWConvTranspose2d, Ensemble, Focus,
-                                    GhostBottleneck, GhostConv, Pose, Segment)
+                                    GhostBottleneck, GhostConv, Segment)
 from ultralytics.yolo.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.yolo.utils.checks import check_requirements, check_suffix, check_yaml
 from ultralytics.yolo.utils.torch_utils import (fuse_conv_and_bn, fuse_deconv_and_bn, initialize_weights,
@@ -183,10 +183,10 @@ class DetectionModel(BaseModel):
 
         # Build strides
         m = self.model[-1]  # Detect()
-        if isinstance(m, (Detect, Segment, Pose)):
+        if isinstance(m, (Detect, Segment)):
             s = 256  # 2x min stride
             m.inplace = self.inplace
-            forward = lambda x: self.forward(x)[0] if isinstance(m, (Segment, Pose)) else self.forward(x)
+            forward = lambda x: self.forward(x)[0] if isinstance(m, Segment) else self.forward(x)
             m.stride = torch.tensor([s / x.shape[-2] for x in forward(torch.zeros(1, ch, s, s))])  # forward
             self.stride = m.stride
             m.bias_init()  # only run once
@@ -242,7 +242,7 @@ class DetectionModel(BaseModel):
 class SegmentationModel(DetectionModel):
     # YOLOv8 segmentation model
     def __init__(self, cfg='yolov8n-seg.yaml', ch=3, nc=None, verbose=True):
-        super().__init__(cfg=cfg, ch=ch, nc=nc, verbose=verbose)
+        super().__init__(cfg, ch, nc, verbose)
 
     def _forward_augment(self, x):
         raise NotImplementedError(emojis('WARNING ⚠️ SegmentationModel has not supported augment inference yet!'))
@@ -436,7 +436,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
     # Args
     max_channels = float('inf')
     nc, act, scales = (d.get(x) for x in ('nc', 'act', 'scales'))
-    depth, width, kpt_shape = (d.get(x, 1.0) for x in ('depth_multiple', 'width_multiple', 'kpt_shape'))
+    depth, width = (d.get(x, 1.0) for x in ('depth_multiple', 'width_multiple'))
     if scales:
         scale = d.get('scale')
         if not scale:
@@ -475,7 +475,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             args = [ch[f]]
         elif m is Concat:
             c2 = sum(ch[x] for x in f)
-        elif m in (Detect, Segment, Pose):
+        elif m in (Detect, Segment):
             args.append([ch[x] for x in f])
             if m is Segment:
                 args[2] = make_divisible(min(args[2], max_channels) * width, 8)
@@ -554,8 +554,6 @@ def guess_model_task(model):
             return 'detect'
         if m == 'segment':
             return 'segment'
-        if m == 'pose':
-            return 'pose'
 
     # Guess from model cfg
     if isinstance(model, dict):
@@ -578,8 +576,6 @@ def guess_model_task(model):
                 return 'segment'
             elif isinstance(m, Classify):
                 return 'classify'
-            elif isinstance(m, Pose):
-                return 'pose'
 
     # Guess from model filename
     if isinstance(model, (str, Path)):
@@ -588,12 +584,10 @@ def guess_model_task(model):
             return 'segment'
         elif '-cls' in model.stem or 'classify' in model.parts:
             return 'classify'
-        elif '-pose' in model.stem or 'pose' in model.parts:
-            return 'pose'
         elif 'detect' in model.parts:
             return 'detect'
 
     # Unable to determine task from model
     LOGGER.warning("WARNING ⚠️ Unable to automatically guess model task, assuming 'task=detect'. "
-                   "Explicitly define task for your model, i.e. 'task=detect', 'segment', 'classify', or 'pose'.")
+                   "Explicitly define task for your model, i.e. 'task=detect', 'task=segment' or 'task=classify'.")
     return 'detect'  # assume detect

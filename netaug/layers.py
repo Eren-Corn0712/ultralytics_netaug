@@ -88,17 +88,9 @@ class DynamicConv2d(DynamicModule, nn.Conv2d):
             return None
         return self.bias[: self.active_out_channels].contiguous()
 
-    def _conv_forward(self, input: Tensor, weight: Tensor, bias: Optional[Tensor]):
-        """
-            Override method for performing forward pass through a convolutional layer.
-        """
+    def forward(self, input: Tensor) -> Tensor:
         self.active_in_channels = input.shape[1]
-        if self.padding_mode != 'zeros':
-            return F.conv2d(F.pad(input, self._reversed_padding_repeated_twice, mode=self.padding_mode),
-                            self.active_weight, self.active_bias, self.stride,
-                            _pair(0), self.dilation, self.groups)
-        return F.conv2d(input, self.active_weight, self.active_bias, self.stride,
-                        self.padding, self.dilation, self.groups)
+        return self._conv_forward(input, self.active_weight, self.active_bias)
 
     def export_module(self) -> nn.Module:
         module = nn.Conv2d(self.active_in_channels, self.active_out_channels,

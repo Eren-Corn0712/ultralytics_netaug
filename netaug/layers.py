@@ -182,6 +182,11 @@ class DynamicBatchNorm2d(DynamicModule, nn.BatchNorm2d):
         else:
             bn_training = (self.active_running_mean is None) and (self.active_running_var is None)
 
+        r"""
+        Buffers are only updated if they are to be tracked and we are in training mode. Thus they only need to be
+        passed when the update should occur (i.e. in training mode when they are tracked), or when buffer stats are
+        used for normalization (i.e. in eval mode when buffers are not None).
+        """
         return F.batch_norm(
             input,
             self.active_running_mean if not self.training or self.track_running_stats else None,

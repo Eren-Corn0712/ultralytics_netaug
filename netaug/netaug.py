@@ -100,10 +100,12 @@ class NetAugTrainer(DetectionTrainer):
                 with torch.cuda.amp.autocast(self.amp):
                     batch = self.preprocess_batch(batch)
                     if epoch < self.args.stop_width_aug:
+                        # Network Augmentation
                         self.model.set_active(aug_width=self.model.aug_width)
                         preds = self.model(batch['img'])
                         loss1, loss_items1 = self.criterion(preds, batch)
 
+                        # Base Model
                         self.model.set_active(self.model.aug_width[0])
                         preds = self.model(batch['img'])
                         loss2, loss_items2 = self.criterion(preds, batch)
@@ -154,6 +156,7 @@ class NetAugTrainer(DetectionTrainer):
                 final_epoch = (epoch + 1 == self.epochs) or self.stopper.possible_stop
 
                 if self.args.val or final_epoch:
+                    # The validate method will get ema model!
                     self.ema.ema.set_active(self.model.aug_width[0])  # Forward Based!
                     self.metrics, self.fitness = self.validate()
                 self.save_metrics(metrics={**self.label_loss_items(self.tloss), **self.metrics, **self.lr})

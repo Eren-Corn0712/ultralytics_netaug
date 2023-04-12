@@ -257,7 +257,7 @@ class DynamicBottleneck(Bottleneck, DynamicModule):
     def export_module(self) -> Bottleneck:
         module = Bottleneck.__new__(Bottleneck)
         nn.Module.__init__(module)
-        copy_attr(module, self, exclude=("cv1", "cv2", "add"))
+        copy_attr(module, self, exclude=("cv1", "cv2", "add", "e", "shortcut", "c_"))
         module.cv1 = self.cv1.export_module()
         module.cv2 = self.cv2.export_module()
         module.add = self.add
@@ -268,6 +268,10 @@ class DynamicBottleneck(Bottleneck, DynamicModule):
         self.cv1.set_active(c1, c_)
         self.cv2.set_active(c_, c2)
         self.add = self.shortcut and c1 == c2
+
+    @property
+    def get_out_channels(self):
+        return self.cv2.conv.out_channels
 
 
 class DynamicC2f(C2f, DynamicModule):
@@ -284,7 +288,7 @@ class DynamicC2f(C2f, DynamicModule):
     def export_module(self) -> C2f:
         module = C2f.__new__(C2f)
         nn.Module.__init__(module)
-        copy_attr(module, self, exclude=("cv1", "cv2", "m"))
+        copy_attr(module, self, exclude=("cv1", "cv2", "m", "n", "e"))
         module.cv1 = self.cv1.export_module()
         module.cv2 = self.cv2.export_module()
         module.m = nn.ModuleList([m.export_module() for m in self.m])
@@ -318,7 +322,7 @@ class DynamicSPPF(SPPF, DynamicModule):
     def export_module(self) -> SPPF:
         module = SPPF.__new__(SPPF)
         nn.Module.__init__(module)
-        copy_attr(module, self, exclude=("cv1", "cv2", "m"))
+        copy_attr(module, self, exclude=("cv1", "cv2", "m", "c_"))
         module.cv1 = self.cv1.export_module()
         module.cv2 = self.cv2.export_module()
         module.m = self.m

@@ -93,9 +93,11 @@ class DynamicConv2d(DynamicModule, nn.Conv2d):
         return self._conv_forward(input, self.active_weight, self.active_bias)
 
     def export_module(self) -> nn.Module:
-        module = nn.Conv2d(self.active_in_channels, self.active_out_channels,
-                           self.kernel_size, self.stride, self.padding, self.dilation, self.groups,
-                           self.bias is not None, self.padding_mode)
+        module = nn.Conv2d(
+            self.active_in_channels, self.active_out_channels,
+            self.kernel_size, self.stride, self.padding, self.dilation, self.groups,
+            self.bias is not None, self.padding_mode
+        )
         module.load_state_dict(self.active_state_dict())
         return module
 
@@ -109,8 +111,6 @@ class DynamicConv2d(DynamicModule, nn.Conv2d):
 
 
 class DynamicBatchNorm2d(DynamicModule, nn.BatchNorm2d):
-    _ndim = 2
-
     def __init__(
             self,
             num_features: int,
@@ -118,14 +118,12 @@ class DynamicBatchNorm2d(DynamicModule, nn.BatchNorm2d):
             momentum: float = 0.1,
             affine: bool = True,
             track_running_stats: bool = True,
+            device=None,
+            dtype=None,
     ) -> None:
+        factory_kwargs = {'device': device, 'dtype': dtype}
         nn.BatchNorm2d.__init__(
-            self,
-            num_features,
-            eps=eps,
-            momentum=momentum,
-            affine=affine,
-            track_running_stats=track_running_stats,
+            self, num_features, eps, momentum, affine, track_running_stats, **factory_kwargs
         )
         self.active_num_features = num_features
 
@@ -153,46 +151,41 @@ class DynamicBatchNorm2d(DynamicModule, nn.BatchNorm2d):
             return None
         return self.bias[: self.active_num_features]
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        self._check_input_dim(x)
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        self._check_input_dim(input)
 
-        self.active_num_features = x.shape[1]
+        self.active_num_features = input.shape[1]
 
+        # exponential_average_factor is set to self.momentum
+        # (when it is available) only so that it gets updated
+        # in ONNX graph when this node is exported to ONNX.
         if self.momentum is None:
             exponential_average_factor = 0.0
         else:
             exponential_average_factor = self.momentum
 
         if self.training and self.track_running_stats:
-            if self.num_batches_tracked is not None:
-                self.num_batches_tracked = self.num_batches_tracked + 1
-                if self.momentum is None:
+            # TODO: if statement only here to tell the jit to skip emitting this when it is None
+            if self.num_batches_tracked is not None:  # type: ignore[has-type]
+                self.num_batches_tracked.add_(1)  # type: ignore[has-type]
+                if self.momentum is None:  # use cumulative moving average
                     exponential_average_factor = 1.0 / float(self.num_batches_tracked)
-                else:
+                else:  # use exponential moving average
                     exponential_average_factor = self.momentum
 
+        r"""
+          Decide whether the mini-batch stats should be used for normalization rather than the buffers.
+          Mini-batch stats are used in training mode, and in eval mode when buffers are None.
+        """
         if self.training:
             bn_training = True
         else:
-            bn_training = (self.active_running_mean is None) and (
-                    self.active_running_var is None
-            )
-
-        running_mean = (
-            self.active_running_mean
-            if not self.training or self.track_running_stats
-            else None
-        )
-        running_var = (
-            self.active_running_var
-            if not self.training or self.track_running_stats
-            else None
-        )
+            bn_training = (self.active_running_mean is None) and (self.active_running_var is None)
 
         return F.batch_norm(
-            x,
-            running_mean,
-            running_var,
+            input,
+            self.active_running_mean if not self.training or self.track_running_stats else None,
+            self.active_running_var if not self.training or self.track_running_stats else None,
             self.active_weight,
             self.active_bias,
             bn_training,
@@ -201,12 +194,8 @@ class DynamicBatchNorm2d(DynamicModule, nn.BatchNorm2d):
         )
 
     def export_module(self) -> nn.Module:
-        module = getattr(nn, "BatchNorm{}d".format(self._ndim))(
-            self.active_num_features,
-            eps=self.eps,
-            momentum=self.momentum,
-            affine=self.affine,
-            track_running_stats=self.track_running_stats,
+        module = nn.BatchNorm2d(
+            self.active_num_features, self.eps, self.momentum, self.affine, self.track_running_stats
         )
         module.load_state_dict(self.active_state_dict())
         return module

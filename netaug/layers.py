@@ -7,6 +7,7 @@ from torch.nn.common_types import _size_2_t
 from typing import Optional, Tuple, Union
 from ultralytics.nn.modules import autopad, Conv, Bottleneck, C2f, SPPF, Detect, DFL
 from ultralytics.yolo.utils.torch_utils import copy_attr
+from netaug.utils.export_utils import get_parent_class_name
 
 __all__ = [
     'DynamicConv2d',
@@ -232,7 +233,8 @@ class DynamicConv(Conv, DynamicModule):
         module.conv = self.conv.export_module()
         module.bn = self.bn.export_module()
         module.act = self.act
-        module.type = self.__class__.__bases__[0].__module__ + '.' + self.__class__.__bases__[0].__name__
+        # Convert the netaug.layers to ultralytics.nn.layers
+        module.type = get_parent_class_name(self)
         return module
 
     def set_active(self, c_in, c_out):
@@ -262,7 +264,7 @@ class DynamicBottleneck(Bottleneck, DynamicModule):
         module.cv1 = self.cv1.export_module()
         module.cv2 = self.cv2.export_module()
         module.add = self.add
-        module.type = self.__class__.__bases__[0].__module__ + '.' + self.__class__.__bases__[0].__name__
+        module.type = get_parent_class_name(self)
         return module
 
     def set_active(self, c1, c2):
@@ -294,7 +296,7 @@ class DynamicC2f(C2f, DynamicModule):
         module.cv1 = self.cv1.export_module()
         module.cv2 = self.cv2.export_module()
         module.m = nn.ModuleList([m.export_module() for m in self.m])
-        module.type = self.__class__.__bases__[0].__module__ + '.' + self.__class__.__bases__[0].__name__
+        module.type = get_parent_class_name(self)
         return module
 
     def set_active(self, c1, c2):
@@ -329,7 +331,7 @@ class DynamicSPPF(SPPF, DynamicModule):
         module.cv1 = self.cv1.export_module()
         module.cv2 = self.cv2.export_module()
         module.m = self.m
-        module.type = self.__class__.__bases__[0].__module__ + '.' + self.__class__.__bases__[0].__name__
+        module.type = get_parent_class_name(self)
         return module
 
     @property
@@ -382,5 +384,5 @@ class DynamicDetect(Detect, DynamicModule):
             nn.Sequential(x[0].export_module(), x[1].export_module(), x[2].export_module()) for x in self.cv3)
 
         module.dfl = self.dfl
-        module.type = self.__class__.__bases__[0].__module__ + '.' + self.__class__.__bases__[0].__name__
+        module.type = get_parent_class_name(self)
         return module

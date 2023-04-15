@@ -1,0 +1,24 @@
+# COCO 2017 dataset http://cocodataset.org
+
+
+
+# train and val data as 1) directory: path/images/, 2) file: path/images.txt, or 3) list: [path1/images/, path2/images/]
+train: ../bdd100k_debug/images/train # 70000 train images
+val: ../bdd100k_debug/images/val  # 10000 validation images
+test: ../bdd100k_debug/images/test  # 20000 test images
+
+# number of classes
+nc: 10
+
+# class names
+names:
+  0: person
+  1: rider
+  2: car
+  3: truck
+  4: bus
+  5: train
+  6: motorcycle
+  7: bicycle
+  8: traffic light
+  9: traffic sign

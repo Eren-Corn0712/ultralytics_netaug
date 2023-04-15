@@ -245,6 +245,12 @@ class NetAugDetectionModel(DetectionModel):
             LOGGER.info('')
         return module
 
+    def sort_channel(self):
+        for name, module in self.model.named_children():
+            if isinstance(module, (DynamicConv, DynamicC2f, DynamicSPPF, DynamicDetect, DynamicConv2d)):
+                module.sort_channels()
+                print(module.__class__.__name__, "Sort!")
+
 
 def random_choices(src_list: List[Any], generator: Optional[torch.Generator] = None, k=1) -> Union[Any, List[Any]]:
     rand_idx = torch.randint(low=0, high=len(src_list), generator=generator, size=(k,))

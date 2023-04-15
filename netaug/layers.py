@@ -8,6 +8,7 @@ from typing import Optional, Tuple, Union
 from ultralytics.nn.modules import autopad, Conv, Bottleneck, C2f, SPPF, Detect, DFL
 from ultralytics.yolo.utils.torch_utils import copy_attr
 from netaug.utils.export_utils import get_parent_class_name
+from netaug.utils.torch_utils import sort_param, calc_importance
 
 __all__ = [
     'DynamicConv2d',
@@ -109,6 +110,17 @@ class DynamicConv2d(DynamicModule, nn.Conv2d):
         if self.bias is not None:
             state_dict["bias"] = self.active_bias
         return state_dict
+
+    def sort_channels(self):
+        # equal torch.sum(torch.abs(self.conv.weight.data), dim=(0, 2, 3))
+        # sorted weight by compute the channels.
+        # nn.Conv2d weight size is [c_out,c_in,k_size,k_size]
+        # nn.Conv2d bias weight size is [c_out]
+        sorted_idx = calc_importance(self.weight, dim=(0, 2, 3))
+        if self.weight is not None:
+            sort_param(self.weight, dim=1, sorted_idx=sorted_idx)  # weight
+        if self.bias is not None:
+            sort_param(self.bias, dim=0, sorted_idx=sorted_idx)  # bias
 
 
 class DynamicBatchNorm2d(DynamicModule, nn.BatchNorm2d):
@@ -218,6 +230,20 @@ class DynamicBatchNorm2d(DynamicModule, nn.BatchNorm2d):
             state_dict["bias"] = self.active_bias
         return state_dict
 
+    def sort_channels(self):
+        # nn.BatchNorm2d weight size is (num_feature)
+        # nn.BatchNorm2d bias size is (num_feature)
+        sorted_idx = calc_importance(self.weight, dim=0)
+        if self.weight is not None:
+            sort_param(self.weight, dim=0, sorted_idx=sorted_idx)
+        if self.bias is not None:
+            sort_param(self.bias, dim=0, sorted_idx=sorted_idx)
+
+        if self.running_mean is not None:
+            sort_param(self.running_mean, dim=0, sorted_idx=sorted_idx)
+
+        if self.running_var is not None:
+            sort_param(self.running_var, dim=0, sorted_idx=sorted_idx)
 
 class DynamicConv(Conv, DynamicModule):
     def __init__(self, c1, c2, k=1, s=1, p=None, g=1, d=1, act=True):
@@ -241,6 +267,10 @@ class DynamicConv(Conv, DynamicModule):
         self.conv.active_in_channels = c_in
         self.conv.active_out_channels = c_out
         self.bn.active_num_features = c_out
+
+    def sort_channels(self):
+        self.conv.sort_channels()
+        self.bn.sort_channels()
 
     @property
     def get_out_channels(self):
@@ -273,6 +303,10 @@ class DynamicBottleneck(Bottleneck, DynamicModule):
         self.cv2.set_active(c_, c2)
         self.add = self.shortcut and c1 == c2
 
+    def sort_channels(self):
+        self.cv1.sort_channels()
+        self.cv2.sort_channels()
+
     @property
     def get_out_channels(self):
         return self.cv2.conv.out_channels
@@ -299,12 +333,20 @@ class DynamicC2f(C2f, DynamicModule):
         module.type = get_parent_class_name(self)
         return module
 
+    def sort_channels(self):
+        self.cv1.sort_channels()
+        self.cv2.sort_channels()
+        [m.set_active() for m in self.m]
+
     def set_active(self, c1, c2):
         c = int(c2 * self.e)
         self.cv1.set_active(c1, 2 * c)
         self.cv2.set_active((2 + self.n) * c, c2)
         for m in self.m:
             m.set_active(c, c)
+
+    def sort_channels(self):
+        pass
 
     @property
     def get_out_channels(self):
@@ -323,6 +365,10 @@ class DynamicSPPF(SPPF, DynamicModule):
         c_ = c1 // 2
         self.cv1.set_active(c1, c_)
         self.cv2.set_active(c_ * 4, c2)
+
+    def sort_channels(self):
+        self.cv1.sort_channels()
+        self.cv2.sort_channels()
 
     def export_module(self) -> SPPF:
         module = SPPF.__new__(SPPF)
@@ -372,6 +418,15 @@ class DynamicDetect(Detect, DynamicModule):
             m[1].set_active(c3, c3)
             m[2].active_in_channels = c3
             m[2].active_out_channels = self.nc
+
+    def sort_channels(self):
+        for m in self.cv2:
+            for n in m:
+                n.sort_channels()
+
+        for m in self.cv3:
+            for n in m:
+                n.sort_channels()
 
     def export_module(self) -> Detect:
         module = Detect.__new__(Detect)

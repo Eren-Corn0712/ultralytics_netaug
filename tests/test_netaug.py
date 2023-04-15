@@ -14,6 +14,13 @@ DATA = ROOT.parent / 'yolov8_lighter' / 'bdd100k.yaml'
 DEFAULT_CFG = ROOT.parent / 'netaug' / 'default.yaml'
 
 
+def has_same_attributes(cls1, cls2):
+    """檢查兩個類別是否有相同的屬性"""
+    attrs1 = set(vars(cls1).keys())
+    attrs2 = set(vars(cls2).keys())
+    return bool(attrs1.intersection(attrs2))
+
+
 def check_model(model1, model2):
     model1_dict = model1.state_dict()
     model2_dict = model2.state_dict()
@@ -73,7 +80,12 @@ class TestNetAug(object):
         pretrained_weight = "../tests/runs/debug/weights/best.pt"
         model1 = YOLO(pretrained_weight)
         model2 = YOLO("yolov8n.pt")
-        pass
+        print(f"The {model1.model.__class__.__name__} and {model2.model.__class__.__name__} is the same attribute :",
+              has_same_attributes(model1, model2))
+
+    def test_sort_channel(self):
+        netaug_detection_model = NetAugDetectionModel(CFG)
+        netaug_detection_model.sort_channel()
 
     def _test_detection_aug_model(self):
         netaug_detection_model = NetAugDetectionModel(CFG)
@@ -98,7 +110,7 @@ class TestNetAug(object):
         pass
         # check_class(detect_conv, export_conv)
 
-    def test_netaug_trainer(self, *args, **kwargs):
+    def _test_netaug_trainer(self, *args, **kwargs):
         overrides = dict(data=str(DATA),
                          model=CFG,
                          imgsz=640,

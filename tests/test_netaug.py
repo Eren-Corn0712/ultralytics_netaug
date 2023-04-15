@@ -4,6 +4,8 @@ from ultralytics.yolo.utils import (LOGGER, ONLINE, RANK, ROOT, SETTINGS, TQDM_B
                                     callbacks, colorstr, emojis, yaml_save)
 from ultralytics.yolo.utils.torch_utils import model_info
 from netaug.netaug import NetAugTrainer, NetAugDetectionModel
+
+from ultralytics import YOLO
 from ultralytics.nn.tasks import DetectionModel
 from netaug.utils.torch_utils import count_grad_parameters
 
@@ -28,6 +30,7 @@ def check_model(model1, model2):
         if key not in model1_dict:
             print(f"Missing key: {key} in model1")
     print("check_model method passed!!!")
+
 
 def check_class(class_a, class_b):
     attrs_a = dir(class_a)
@@ -66,7 +69,13 @@ class TestNetAug(object):
     def __init__(self, *args, **kwargs):
         pass
 
-    def test_detection_aug_model(self):
+    def test_load_pretrained(self):
+        pretrained_weight = "../tests/runs/debug/weights/best.pt"
+        model1 = YOLO(pretrained_weight)
+        model2 = YOLO("yolov8n.pt")
+        pass
+
+    def _test_detection_aug_model(self):
         netaug_detection_model = NetAugDetectionModel(CFG)
         detection_model = DetectionModel(CFG)
 
@@ -89,7 +98,7 @@ class TestNetAug(object):
         pass
         # check_class(detect_conv, export_conv)
 
-    def _test_netaug_trainer(self, *args, **kwargs):
+    def test_netaug_trainer(self, *args, **kwargs):
         overrides = dict(data=str(DATA),
                          model=CFG,
                          imgsz=640,

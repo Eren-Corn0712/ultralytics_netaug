@@ -17,16 +17,10 @@ from ultralytics.yolo.utils import (LOGGER, ONLINE, RANK, ROOT, SETTINGS, TQDM_B
                                     callbacks, colorstr, emojis, yaml_save, DEFAULT_CFG)
 
 from ultralytics.yolo.v8.detect import DetectionTrainer
-from ultralytics.yolo.v8.detect.train import Loss
-from ultralytics.nn.tasks import attempt_load_one_weight
-from ultralytics.yolo.utils.checks import check_file, check_imgsz, check_yaml
 from ultralytics.yolo.utils.torch_utils import de_parallel
-from ultralytics.yolo.utils.tal import make_anchors
-from ultralytics.yolo.utils.torch_utils import model_info
+
 from copy import deepcopy
 from netaug.task import NetAugDetectionModel
-from netaug.utils.export_utils import yolo_export
-from netaug.utils.torch_utils import count_grad_parameters
 
 
 class NetAugTrainer(DetectionTrainer):
@@ -199,7 +193,7 @@ class NetAugTrainer(DetectionTrainer):
             'epoch': self.epoch,
             'best_fitness': self.best_fitness,
             'model': deepcopy(de_parallel(model)).half(),
-            'ema': deepcopy(self.ema.ema).half(),
+            'ema': deepcopy(self.ema.ema.export_module()).half(),
             'updates': self.ema.updates,
             'optimizer': self.optimizer.state_dict(),
             'train_args': vars(self.args),  # save as dict

@@ -91,7 +91,7 @@ def sort_param(
     sorted_param = torch.index_select(param.data, dim, sorted_idx)
 
     # Replace the data of the original parameter tensor with the sorted data.
-    param.data.copy_(sorted_param.detach())
+    param.data.copy_(sorted_param.clone().detach())
 
 
 def calc_importance(x: torch.Tensor, dim: Union[int, Tuple[int], List[int]]) -> torch.Tensor:

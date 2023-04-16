@@ -216,7 +216,7 @@ class NetAugDetectionModel(DetectionModel):
             ch.append(c2)
         return ch
 
-    def export_module(self, verbose=True) -> DetectionModel:
+    def export_module(self, verbose=False) -> DetectionModel:
         module = DetectionModel.__new__(DetectionModel)
         nn.Module.__init__(module)
         copy_attr(module, self, exclude=("model", "max_width", "max_depth", "ch", "aug_width"))
@@ -225,18 +225,12 @@ class NetAugDetectionModel(DetectionModel):
         # set active
         self.set_active(self.aug_width[0])
         export_m = []
-        for m in self.model:
+        for m in self.model.children():
             if hasattr(m, "export_module"):
                 export_m.append(m.export_module())
             else:
                 export_m.append(m)
         module.model = nn.Sequential(*export_m)
-        m = module.model[-1]  # Detect()
-
-        if isinstance(m, (Detect, Segment)):
-            s = 256  # 2x min stride
-            m.inplace = self.inplace
-            m.bias_init()  # only run once
 
         # Init weights, biases
         initialize_weights(module)
@@ -245,11 +239,12 @@ class NetAugDetectionModel(DetectionModel):
             LOGGER.info('')
         return module
 
-    def sort_channel(self):
-        for name, module in self.model.named_children():
-            if isinstance(module, (DynamicConv, DynamicC2f, DynamicSPPF, DynamicDetect, DynamicConv2d)):
-                module.sort_channels()
-                print(module.__class__.__name__, "Sort!")
+    def sort_channels(self):
+        for m in self.model.children():
+            if isinstance(m, (DynamicConv, DynamicC2f, DynamicSPPF, DynamicDetect)):
+                m.sort_channels()
+
+        LOGGER.info("\nThe channels are already sorted.")
 
 
 def random_choices(src_list: List[Any], generator: Optional[torch.Generator] = None, k=1) -> Union[Any, List[Any]]:

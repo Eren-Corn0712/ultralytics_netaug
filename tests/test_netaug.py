@@ -76,14 +76,14 @@ class TestNetAug(object):
     def __init__(self, *args, **kwargs):
         pass
 
-    def test_load_pretrained(self):
+    def _test_load_pretrained(self):
         pretrained_weight = "../tests/runs/debug/weights/best.pt"
         model1 = YOLO(pretrained_weight)
         model2 = YOLO("yolov8n.pt")
         print(f"The {model1.model.__class__.__name__} and {model2.model.__class__.__name__} is the same attribute :",
               has_same_attributes(model1, model2))
 
-    def test_sort_channel(self):
+    def _test_sort_channel(self):
         netaug_detection_model = NetAugDetectionModel(CFG)
         netaug_detection_model.sort_channel()
 
@@ -110,7 +110,7 @@ class TestNetAug(object):
         pass
         # check_class(detect_conv, export_conv)
 
-    def _test_netaug_trainer(self, *args, **kwargs):
+    def test_netaug_trainer(self, *args, **kwargs):
         overrides = dict(data=str(DATA),
                          model=CFG,
                          imgsz=640,

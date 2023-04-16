@@ -111,14 +111,9 @@ class DynamicConv2d(DynamicModule, nn.Conv2d):
             state_dict["bias"] = self.active_bias
         return state_dict
 
-    def sort_channels(self):
-        # equal torch.sum(torch.abs(self.conv.weight.data), dim=(0, 2, 3))
-        # sorted weight by compute the channels.
-        # nn.Conv2d weight size is [c_out,c_in,k_size,k_size]
-        # nn.Conv2d bias weight size is [c_out]
-        sorted_idx = calc_importance(self.weight, dim=(0, 2, 3))
+    def sort_channels(self, sorted_idx):
         if self.weight is not None:
-            sort_param(self.weight, dim=1, sorted_idx=sorted_idx)  # weight
+            sort_param(self.weight, dim=0, sorted_idx=sorted_idx)  # weight
         if self.bias is not None:
             sort_param(self.bias, dim=0, sorted_idx=sorted_idx)  # bias
 
@@ -230,10 +225,9 @@ class DynamicBatchNorm2d(DynamicModule, nn.BatchNorm2d):
             state_dict["bias"] = self.active_bias
         return state_dict
 
-    def sort_channels(self):
+    def sort_channels(self, sorted_idx):
         # nn.BatchNorm2d weight size is (num_feature)
         # nn.BatchNorm2d bias size is (num_feature)
-        sorted_idx = calc_importance(self.weight, dim=0)
         if self.weight is not None:
             sort_param(self.weight, dim=0, sorted_idx=sorted_idx)
         if self.bias is not None:
@@ -244,6 +238,7 @@ class DynamicBatchNorm2d(DynamicModule, nn.BatchNorm2d):
 
         if self.running_var is not None:
             sort_param(self.running_var, dim=0, sorted_idx=sorted_idx)
+
 
 class DynamicConv(Conv, DynamicModule):
     def __init__(self, c1, c2, k=1, s=1, p=None, g=1, d=1, act=True):
@@ -269,8 +264,13 @@ class DynamicConv(Conv, DynamicModule):
         self.bn.active_num_features = c_out
 
     def sort_channels(self):
-        self.conv.sort_channels()
-        self.bn.sort_channels()
+        # equal torch.sum(torch.abs(self.conv.weight.data), dim=(0, 2, 3))
+        # sorted weight by compute the channels.
+        # nn.Conv2d weight size is [c_out,c_in,k_size,k_size]
+        # nn.Conv2d bias weight size is [c_out]
+        sorted_idx = calc_importance(self.conv.weight, dim=(1, 2, 3))
+        self.conv.sort_channels(sorted_idx=sorted_idx)
+        self.bn.sort_channels(sorted_idx=sorted_idx)
 
     @property
     def get_out_channels(self):
@@ -336,7 +336,7 @@ class DynamicC2f(C2f, DynamicModule):
     def sort_channels(self):
         self.cv1.sort_channels()
         self.cv2.sort_channels()
-        [m.set_active() for m in self.m]
+        [m.sort_channels() for m in self.m]
 
     def set_active(self, c1, c2):
         c = int(c2 * self.e)
@@ -344,9 +344,6 @@ class DynamicC2f(C2f, DynamicModule):
         self.cv2.set_active((2 + self.n) * c, c2)
         for m in self.m:
             m.set_active(c, c)
-
-    def sort_channels(self):
-        pass
 
     @property
     def get_out_channels(self):
@@ -421,12 +418,12 @@ class DynamicDetect(Detect, DynamicModule):
 
     def sort_channels(self):
         for m in self.cv2:
-            for n in m:
-                n.sort_channels()
+            m[0].sort_channels()
+            m[1].sort_channels()
 
         for m in self.cv3:
-            for n in m:
-                n.sort_channels()
+            m[0].sort_channels()
+            m[1].sort_channels()
 
     def export_module(self) -> Detect:
         module = Detect.__new__(Detect)

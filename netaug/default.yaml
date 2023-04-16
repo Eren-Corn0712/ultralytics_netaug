@@ -120,3 +120,9 @@ max_depth: 1.0
 num_points: 3
 # Stop Width aug
 stop_width_aug: 600
+
+# Use the sort channels technique
+sort_channel: True
+
+# Use the reset batch norm technique
+reset_bn: True

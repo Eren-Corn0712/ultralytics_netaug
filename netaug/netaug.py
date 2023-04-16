@@ -15,12 +15,14 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from ultralytics import YOLO
 from ultralytics.yolo.utils import (LOGGER, ONLINE, RANK, ROOT, SETTINGS, TQDM_BAR_FORMAT, __version__,
                                     callbacks, colorstr, emojis, yaml_save, DEFAULT_CFG)
-
+from ultralytics.yolo.utils.torch_utils import (smart_inference_mode)
 from ultralytics.yolo.v8.detect import DetectionTrainer
 from ultralytics.yolo.utils.torch_utils import de_parallel
 
 from copy import deepcopy
 from netaug.task import NetAugDetectionModel
+from netaug.utils.reset_utils import AverageMeter
+from torch.nn.modules.batchnorm import _BatchNorm
 
 
 class NetAugTrainer(DetectionTrainer):
@@ -60,6 +62,8 @@ class NetAugTrainer(DetectionTrainer):
             self.epoch = epoch
             self.run_callbacks('on_train_epoch_start')
             self.model.train()
+            if self.args.sort_channel:
+                self.model.sort_channels()
             if RANK != -1:
                 self.train_loader.sampler.set_epoch(epoch)
             pbar = enumerate(self.train_loader)
@@ -93,23 +97,18 @@ class NetAugTrainer(DetectionTrainer):
                 # Forward
                 with torch.cuda.amp.autocast(self.amp):
                     batch = self.preprocess_batch(batch)
+                    # Base model forward
+                    self.model.set_active(self.model.aug_width[0])
+                    preds = self.model(batch['img'])
+                    self.loss, self.loss_items = self.criterion(preds, batch)
+
                     if epoch < self.args.stop_width_aug:
                         # Network Augmentation
                         self.model.set_active(aug_width=self.model.aug_width)
                         preds = self.model(batch['img'])
-                        loss1, loss_items1 = self.criterion(preds, batch)
-
-                        # Base Model
-                        self.model.set_active(self.model.aug_width[0])
-                        preds = self.model(batch['img'])
-                        loss2, loss_items2 = self.criterion(preds, batch)
-
-                        self.loss = loss1 + loss2
-                        self.loss_items = loss_items1 + loss_items2
-                    else:
-                        self.model.set_active(self.model.aug_width[0])
-                        preds = self.model(batch['img'])
-                        self.loss, self.loss_items = self.criterion(preds, batch)
+                        loss_active, loss_active_items = self.criterion(preds, batch)
+                        self.loss += loss_active
+                        self.loss_items += loss_active_items
 
                     if RANK != -1:
                         self.loss *= world_size
@@ -150,8 +149,12 @@ class NetAugTrainer(DetectionTrainer):
                 final_epoch = (epoch + 1 == self.epochs) or self.stopper.possible_stop
 
                 if self.args.val or final_epoch:
-                    # The validate method will get ema model!
+                    # Reset batch norm
                     self.ema.ema.set_active(self.model.aug_width[0])  # Forward Based!
+                    if self.args.reset_bn:
+                        self.reset_batch_norm()
+
+                    # The validate method will get ema model!
                     self.metrics, self.fitness = self.validate()
                 self.save_metrics(metrics={**self.label_loss_items(self.tloss), **self.metrics, **self.lr})
                 self.stop = self.stopper(epoch + 1, self.fitness)
@@ -207,3 +210,93 @@ class NetAugTrainer(DetectionTrainer):
         if (self.epoch > 0) and (self.save_period > 0) and (self.epoch % self.save_period == 0):
             torch.save(ckpt, self.wdir / f'epoch{self.epoch}.pt')
         del ckpt, model
+
+    @smart_inference_mode()
+    def reset_batch_norm(self) -> None:
+        self.ema.ema.eval()
+        temp_model = deepcopy(self.ema.ema)
+
+        bn_mean, bn_var = {}, {}
+        for name, m in temp_model.named_modules():
+
+            if isinstance(m, _BatchNorm):
+                bn_mean[name] = AverageMeter()
+                bn_var[name] = AverageMeter()
+
+                def new_forward(batch_norm_layer, mean_estimate, var_estimate):
+                    def lambda_forward(x):
+                        x = x.contiguous()
+                        batch_mean = (
+                            x.mean(0, keepdim=True)
+                            .mean(2, keepdim=True)
+                            .mean(3, keepdim=True)
+                        )  # 1, C, 1, 1
+                        batch_var = (x - batch_mean) * (x - batch_mean)
+                        batch_var = (
+                            batch_var.mean(0, keepdim=True)
+                            .mean(2, keepdim=True)
+                            .mean(3, keepdim=True)
+                        )
+
+                        batch_mean = torch.squeeze(batch_mean).to(x.dtype)
+                        batch_var = torch.squeeze(batch_var).to(x.dtype)
+
+                        mean_estimate.update(batch_mean.data, x.size(0))
+                        var_estimate.update(batch_var.data, x.size(0))
+
+                        fea_dim = batch_mean.shape[0]
+
+                        return F.batch_norm(
+                            x,
+                            batch_mean,
+                            batch_var,
+                            batch_norm_layer.weight[:fea_dim].to(x.dtype),
+                            batch_norm_layer.bias[:fea_dim].to(x.dtype),
+                            False,
+                            0.0,
+                            batch_norm_layer.eps,
+                        )
+
+                    return lambda_forward
+
+                m.forward = new_forward(m, bn_mean[name], bn_var[name])
+
+        # skip if there is no batch normalization layers in the network
+        if len(bn_mean) == 0:
+            return
+
+        pbar = enumerate(self.train_loader)
+        # Update dataloader attributes (optional)
+        LOGGER.info("\n%11s" % "Starting the Reset Batch norm!, Closing dataloader Data Augmentation")
+
+        if hasattr(self.train_loader.dataset, 'augment'):
+            self.train_loader.dataset.augment = False
+            self.train_loader.dataset.transforms = self.train_loader.dataset.build_transforms(hyp=self.args)
+
+        if RANK in (-1, 0):
+            LOGGER.info(('\n' + '%11s' * 4) % (
+                'Epoch', 'GPU_mem', 'Instances', 'Size'))
+            pbar = tqdm(enumerate(self.train_loader), total=len(self.train_loader), bar_format=TQDM_BAR_FORMAT)
+
+        for i, batch in pbar:
+            with torch.cuda.amp.autocast(self.amp):
+                batch = self.preprocess_batch(batch)
+                temp_model(batch['img'])  # we don't need the predict result.
+                mem = f'{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G'
+                pbar.set_description(
+                    ('%11s' * 2 + '%11.4g' * 2) %
+                    (f'{self.epoch + 1}/{self.epochs}', mem, batch['cls'].shape[0], batch['img'].shape[-1])
+                )
+
+        for name, m in self.ema.ema.named_modules():
+            if name in bn_mean and bn_mean[name].count > 0:
+                feature_dim = bn_mean[name].avg.size(0)
+                assert isinstance(m, _BatchNorm)
+                m.running_mean.data[:feature_dim].copy_(bn_mean[name].avg.clone().detach())
+                m.running_var.data[:feature_dim].copy_(bn_var[name].avg.clone().detach())
+
+        if RANK in (-1, 0):
+            LOGGER.info("\nReset Batch Norm Successful.")
+        if hasattr(self.train_loader.dataset, 'augment'):
+            self.train_loader.dataset.augment = True
+            self.train_loader.dataset.transforms = self.train_loader.dataset.build_transforms(hyp=self.args)

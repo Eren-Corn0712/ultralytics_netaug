@@ -334,6 +334,7 @@ class DynamicC2f(C2f, DynamicModule):
         return module
 
     def sort_channels(self):
+        # TODO
         self.cv1.sort_channels()
         self.cv2.sort_channels()
         [m.sort_channels() for m in self.m]

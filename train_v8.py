@@ -13,7 +13,7 @@ for m in m_list[::-1]:
         cache=False,
         device=1,
         workers=16,
-        project='runs/yolov8',
+        project='runs/',
         name=str(Path(m).with_suffix('')),
         exist_ok=True,
         lr0=0.01,

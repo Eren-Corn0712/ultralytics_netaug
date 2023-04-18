@@ -87,11 +87,10 @@ class TestNetAug(object):
         netaug_detection_model = NetAugDetectionModel(CFG)
         netaug_detection_model.sort_channel()
 
-    def _test_detection_aug_model(self):
+    def test_detection_aug_model(self):
         netaug_detection_model = NetAugDetectionModel(CFG)
-        detection_model = DetectionModel(CFG)
-
-        x = torch.ones(1, 3, 640, 640)
+        x = torch.ones(1, 3, 640, 640).cuda()
+        netaug_detection_model = netaug_detection_model.cuda()
         for _ in range(1):
             netaug_detection_model.set_active(netaug_detection_model.aug_width)
             y = netaug_detection_model(x)
@@ -100,17 +99,15 @@ class TestNetAug(object):
             print("Grad Parameters: ", count_grad_parameters(netaug_detection_model))
             netaug_detection_model.zero_grad()
 
-        exported_model = netaug_detection_model.export_module()
-        print(detection_model.load_state_dict(exported_model.state_dict()))
+            print("Base nodel")
+            netaug_detection_model.set_active(netaug_detection_model.aug_width[0])
+            y = netaug_detection_model(x)
+            y = sum([z.sum() for z in y])
+            y.backward(torch.ones_like(y))
+            print("Grad Parameters: ", count_grad_parameters(netaug_detection_model))
+            netaug_detection_model.zero_grad()
 
-        check_model(detection_model, exported_model)
-        # Check Conv
-        export_conv = exported_model.model[0]
-        detect_conv = detection_model.model[0]
-        pass
-        # check_class(detect_conv, export_conv)
-
-    def test_netaug_trainer(self, *args, **kwargs):
+    def _test_netaug_trainer(self, *args, **kwargs):
         overrides = dict(data=str(DATA),
                          model=CFG,
                          imgsz=640,

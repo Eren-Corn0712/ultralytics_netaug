@@ -120,10 +120,22 @@ class NetAugDetectionModel(DetectionModel):
             self.stride = m.stride
             m.bias_init()  # only run once
 
-        initialize_weights(self)
+        self.initialize_dynamic_weights()
         if verbose:
             self.info()
             LOGGER.info('')
+
+    def initialize_dynamic_weights(self):
+        # Initialize model weights to random values
+        for m in self.model.modules():
+            t = type(m)
+            if t is netaug.layers.DynamicConv2d:
+                pass  # nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif t is netaug.layers.DynamicBatchNorm2d:
+                m.eps = 1e-3
+                m.momentum = 0.03
+            elif t in [nn.Hardswish, nn.LeakyReLU, nn.ReLU, nn.ReLU6, nn.SiLU]:
+                m.inplace = True
 
     def parse_dynamic_model(self, d, ch, verbose=True):
         import ast
@@ -243,7 +255,6 @@ class NetAugDetectionModel(DetectionModel):
         for m in self.model.children():
             if isinstance(m, (DynamicConv, DynamicC2f, DynamicSPPF, DynamicDetect)):
                 m.sort_channels()
-
         LOGGER.info("\nThe channels are already sorted.")
 
 

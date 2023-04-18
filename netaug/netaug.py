@@ -218,7 +218,6 @@ class NetAugTrainer(DetectionTrainer):
 
         bn_mean, bn_var = {}, {}
         for name, m in temp_model.named_modules():
-
             if isinstance(m, _BatchNorm):
                 bn_mean[name] = AverageMeter()
                 bn_var[name] = AverageMeter()
@@ -236,7 +235,7 @@ class NetAugTrainer(DetectionTrainer):
                             batch_var.mean(0, keepdim=True)
                             .mean(2, keepdim=True)
                             .mean(3, keepdim=True)
-                        )
+                        ) # 1, C, 1, 1
 
                         batch_mean = torch.squeeze(batch_mean).to(x.dtype)
                         batch_var = torch.squeeze(batch_var).to(x.dtype)

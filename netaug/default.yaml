@@ -15,7 +15,7 @@ save: True  # save train checkpoints and predict results
 save_period: -1 # Save checkpoint every x epochs (disabled if < 1)
 cache: False  # True/ram, disk or False. Use cache for data loading
 device: 1 # device to run on, i.e. cuda device=0 or device=0,1,2,3 or device=cpu
-workers: 8  # number of worker threads for data loading (per RANK if DDP)
+workers: 10  # number of worker threads for data loading (per RANK if DDP)
 project:  # project name
 name:  # experiment name, results saved to 'project/name' directory
 exist_ok: False  # whether to overwrite existing experiment
@@ -115,14 +115,14 @@ v5loader: False  # use legacy YOLOv5 dataloader
 tracker: botsort.yaml  # tracker type, ['botsort.yaml', 'bytetrack.yaml']
 
 # NetAug Width
-max_width: 1.5
+max_width: 2.0
 max_depth: 1.0
-num_points: 3
+num_points: 5
 # Stop Width aug
 stop_width_aug: 600
 
 # Use the sort channels technique
-sort_channel: True
+sort_channel: False
 
 # Use the reset batch norm technique
-reset_bn: True
+reset_bn: False

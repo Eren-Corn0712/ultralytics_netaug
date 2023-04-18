@@ -1,4 +1,4 @@
-# Ultralytics YOLO 🚀, GPL-3.0 license
+# Ultralytics YOLO 🚀, AGPL-3.0 license
 """
 Check a model's accuracy on a test or val split of a dataset
 
@@ -174,9 +174,9 @@ class BaseValidator:
             self.run_callbacks('on_val_batch_end')
         stats = self.get_stats()
         self.check_stats(stats)
-        self.print_results()
         self.speed = dict(zip(self.speed.keys(), (x.t / len(self.dataloader.dataset) * 1E3 for x in dt)))
         self.finalize_metrics()
+        self.print_results()
         self.run_callbacks('on_val_end')
         if self.training:
             model.float()

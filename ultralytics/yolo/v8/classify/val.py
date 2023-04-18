@@ -1,9 +1,9 @@
-# Ultralytics YOLO 🚀, GPL-3.0 license
+# Ultralytics YOLO 🚀, AGPL-3.0 license
 
 from ultralytics.yolo.data import build_classification_dataloader
 from ultralytics.yolo.engine.validator import BaseValidator
 from ultralytics.yolo.utils import DEFAULT_CFG, LOGGER
-from ultralytics.yolo.utils.metrics import ClassifyMetrics
+from ultralytics.yolo.utils.metrics import ClassifyMetrics, ConfusionMatrix
 
 
 class ClassificationValidator(BaseValidator):
@@ -17,6 +17,9 @@ class ClassificationValidator(BaseValidator):
         return ('%22s' + '%11s' * 2) % ('classes', 'top1_acc', 'top5_acc')
 
     def init_metrics(self, model):
+        self.names = model.names
+        self.nc = len(model.names)
+        self.confusion_matrix = ConfusionMatrix(nc=self.nc, task='classify')
         self.pred = []
         self.targets = []
 
@@ -32,8 +35,11 @@ class ClassificationValidator(BaseValidator):
         self.targets.append(batch['cls'])
 
     def finalize_metrics(self, *args, **kwargs):
+        self.confusion_matrix.process_cls_preds(self.pred, self.targets)
+        if self.args.plots:
+            self.confusion_matrix.plot(save_dir=self.save_dir, names=list(self.names.values()))
         self.metrics.speed = self.speed
-        # self.metrics.confusion_matrix = self.confusion_matrix  # TODO: classification ConfusionMatrix
+        self.metrics.confusion_matrix = self.confusion_matrix
 
     def get_stats(self):
         self.metrics.process(self.targets, self.pred)

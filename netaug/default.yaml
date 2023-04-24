@@ -115,7 +115,7 @@ v5loader: False  # use legacy YOLOv5 dataloader
 tracker: botsort.yaml  # tracker type, ['botsort.yaml', 'bytetrack.yaml']
 
 # NetAug Width
-max_width: 2.0
+max_width: 4.0
 max_depth: 1.0
 num_points: 5
 # Stop Width aug

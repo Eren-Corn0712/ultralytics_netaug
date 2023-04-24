@@ -83,11 +83,11 @@ class TestNetAug(object):
         print(f"The {model1.model.__class__.__name__} and {model2.model.__class__.__name__} is the same attribute :",
               has_same_attributes(model1, model2))
 
-    def _test_sort_channel(self):
-        netaug_detection_model = NetAugDetectionModel(CFG)
-        netaug_detection_model.sort_channel()
+    def test_sort_channel(self):
+        netaug_detection_model = NetAugDetectionModel(CFG, max_depth=4.0)
+        netaug_detection_model.sort_channels()
 
-    def test_detection_aug_model(self):
+    def _test_detection_aug_model(self):
         netaug_detection_model = NetAugDetectionModel(CFG)
         x = torch.ones(1, 3, 640, 640).cuda()
         netaug_detection_model = netaug_detection_model.cuda()

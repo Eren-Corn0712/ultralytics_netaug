@@ -253,7 +253,7 @@ class NetAugDetectionModel(DetectionModel):
 
     def sort_channels(self):
         for m in self.model.children():
-            if isinstance(m, (DynamicConv, DynamicC2f, DynamicSPPF, DynamicDetect)):
+            if isinstance(m, (DynamicConv, DynamicC2f,)):
                 m.sort_channels()
         LOGGER.info("\nThe channels are already sorted.")
 

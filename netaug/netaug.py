@@ -62,8 +62,9 @@ class NetAugTrainer(DetectionTrainer):
             self.epoch = epoch
             self.run_callbacks('on_train_epoch_start')
             self.model.train()
-            if self.args.sort_channel:
+            if self.args.sort_channel and epoch % 50 == 0 and epoch != 0:
                 self.model.sort_channels()
+
             if RANK != -1:
                 self.train_loader.sampler.set_epoch(epoch)
             pbar = enumerate(self.train_loader)
@@ -153,7 +154,6 @@ class NetAugTrainer(DetectionTrainer):
                     self.ema.ema.set_active(self.model.aug_width[0])  # Forward Based!
                     if self.args.reset_bn:
                         self.reset_batch_norm()
-
                     # The validate method will get ema model!
                     self.metrics, self.fitness = self.validate()
                 self.save_metrics(metrics={**self.label_loss_items(self.tloss), **self.metrics, **self.lr})
@@ -235,7 +235,7 @@ class NetAugTrainer(DetectionTrainer):
                             batch_var.mean(0, keepdim=True)
                             .mean(2, keepdim=True)
                             .mean(3, keepdim=True)
-                        ) # 1, C, 1, 1
+                        )  # 1, C, 1, 1
 
                         batch_mean = torch.squeeze(batch_mean).to(x.dtype)
                         batch_var = torch.squeeze(batch_var).to(x.dtype)

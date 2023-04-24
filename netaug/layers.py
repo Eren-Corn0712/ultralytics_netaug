@@ -8,7 +8,7 @@ from typing import Optional, Tuple, Union
 from ultralytics.nn.modules import autopad, Conv, Bottleneck, C2f, SPPF, Detect, DFL
 from ultralytics.yolo.utils.torch_utils import copy_attr
 from netaug.utils.export_utils import get_parent_class_name
-from netaug.utils.torch_utils import sort_param, calc_importance
+from netaug.utils.torch_utils import (sort_param, sort_norm, calc_importance, groups_sorted_idx)
 
 __all__ = [
     'DynamicConv2d',
@@ -81,7 +81,7 @@ class DynamicConv2d(DynamicModule, nn.Conv2d):
     def active_weight(self) -> Optional[torch.Tensor]:
         if self.weight is None:
             return None
-        weight = self.weight[: self.active_out_channels, : self.active_in_channels]
+        weight = self.weight[:self.active_out_channels, :self.active_in_channels]
         return weight.contiguous()
 
     @property
@@ -225,20 +225,6 @@ class DynamicBatchNorm2d(DynamicModule, nn.BatchNorm2d):
             state_dict["bias"] = self.active_bias
         return state_dict
 
-    def sort_channels(self, sorted_idx):
-        # nn.BatchNorm2d weight size is (num_feature)
-        # nn.BatchNorm2d bias size is (num_feature)
-        if self.weight is not None:
-            sort_param(self.weight, dim=0, sorted_idx=sorted_idx)
-        if self.bias is not None:
-            sort_param(self.bias, dim=0, sorted_idx=sorted_idx)
-
-        if self.running_mean is not None:
-            sort_param(self.running_mean, dim=0, sorted_idx=sorted_idx)
-
-        if self.running_var is not None:
-            sort_param(self.running_var, dim=0, sorted_idx=sorted_idx)
-
 
 class DynamicConv(Conv, DynamicModule):
     def __init__(self, c1, c2, k=1, s=1, p=None, g=1, d=1, act=True):
@@ -263,18 +249,14 @@ class DynamicConv(Conv, DynamicModule):
         self.conv.active_out_channels = c_out
         self.bn.active_num_features = c_out
 
-    def sort_channels(self):
-        # equal torch.sum(torch.abs(self.conv.weight.data), dim=(0, 2, 3))
-        # sorted weight by compute the channels.
-        # nn.Conv2d weight size is [c_out,c_in,k_size,k_size]
-        # nn.Conv2d bias weight size is [c_out]
-        sorted_idx = calc_importance(self.conv.weight, dim=(1, 2, 3))
-        self.conv.sort_channels(sorted_idx=sorted_idx)
-        self.bn.sort_channels(sorted_idx=sorted_idx)
-
     @property
     def get_out_channels(self):
         return self.conv.out_channels
+
+    def sort_channels(self):
+        sorted_idx = calc_importance(self.conv.weight, dim=(1, 2, 3))  # sort channel out
+        sort_param(self.conv.weight, dim=0, sorted_idx=sorted_idx)
+        sort_norm(self.bn, sorted_idx=sorted_idx)
 
 
 class DynamicBottleneck(Bottleneck, DynamicModule):
@@ -303,9 +285,13 @@ class DynamicBottleneck(Bottleneck, DynamicModule):
         self.cv2.set_active(c_, c2)
         self.add = self.shortcut and c1 == c2
 
-    def sort_channels(self):
-        self.cv1.sort_channels()
-        self.cv2.sort_channels()
+    def sort_channels(self, sorted_idx):
+        if self.e != 1.0:
+            raise ValueError(f"C2f module only support the the e = 1.0")
+        sort_param(self.cv1.conv.weight, dim=0, sorted_idx=sorted_idx)  # sort channel out
+        sort_norm(self.cv1.bn, sorted_idx=sorted_idx)
+        sort_param(self.cv2.conv.weight, dim=0, sorted_idx=sorted_idx)  # sort channel out
+        sort_norm(self.cv2.bn, sorted_idx=sorted_idx)
 
     @property
     def get_out_channels(self):
@@ -334,10 +320,15 @@ class DynamicC2f(C2f, DynamicModule):
         return module
 
     def sort_channels(self):
-        # TODO
-        self.cv1.sort_channels()
-        self.cv2.sort_channels()
-        [m.sort_channels() for m in self.m]
+        sorted_idx = calc_importance(self.cv2.conv.weight, dim=(0, 2, 3))  # sorted idx size is (2+n) * self.c
+        channel_index = [self.cv1.get_out_channels] + [m.cv2.get_out_channels for m in self.m]
+
+        group_sorted_idx = groups_sorted_idx(sorted_idx, torch.tensor(channel_index))
+
+        sort_param(self.cv1.conv.weight, dim=0, sorted_idx=group_sorted_idx[0])
+        sort_norm(self.cv1.bn, sorted_idx=group_sorted_idx[0])
+        for i, m in enumerate(self.m):
+            m.sort_channels(group_sorted_idx[1 + i])
 
     def set_active(self, c1, c2):
         c = int(c2 * self.e)
@@ -365,8 +356,7 @@ class DynamicSPPF(SPPF, DynamicModule):
         self.cv2.set_active(c_ * 4, c2)
 
     def sort_channels(self):
-        self.cv1.sort_channels()
-        self.cv2.sort_channels()
+        pass
 
     def export_module(self) -> SPPF:
         module = SPPF.__new__(SPPF)

@@ -8,7 +8,7 @@ overrides = dict(data="yolov8_lighter/bdd100k.yaml",
                  save=True,
                  exist_ok=True,
                  project='runs',
-                 name='net_aug/yolov8w015_dynamic_2x',
+                 name='net_aug/yolov8w015_dynamic_4x',
                  device=3)
 
 trainer = NetAugTrainer(overrides=overrides, cfg="netaug/default.yaml")

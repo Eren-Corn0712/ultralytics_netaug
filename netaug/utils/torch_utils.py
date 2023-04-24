@@ -57,41 +57,42 @@ def count_grad_parameters(model):
 
 
 def sort_param(
-        param: nn.Parameter,
-        dim: int,
-        sorted_idx: torch.Tensor,
+        param: nn.Parameter,  # the parameter to be sorted
+        dim: int,  # the dimension along which to sort the parameter
+        sorted_idx: torch.Tensor,  # the sorted indices
 ) -> None:
     """
-    Sorts the values of a tensor parameter along a given dimension based on the
-    specified sorted indices tensor. This function modifies the parameter in-place.
+    Sorts the given parameter along the specified dimension
+    using the provided sorted indices.
 
     Args:
-        param (nn.Parameter): The parameter tensor to be sorted.
-        dim (int): The dimension along which to sort the tensor.
-        sorted_idx (torch.Tensor): The sorted indices tensor to use for sorting.
+        param (nn.Parameter): The parameter to be sorted.
+        dim (int): The dimension along which to sort the parameter.
+        sorted_idx (torch.Tensor): The sorted indices.
 
-    Raises:
-        ValueError: If `dim` is out of bounds for the parameter tensor.
-
-    Example usage:
-        >>> # Sorting a 2D tensor along its second dimension:
-        >>> p = nn.Parameter(torch.tensor([[3, 4, 1], [2, 5, 6]]))
-        >>> sort_param(p, 1, torch.tensor([[2, 0, 1], [1, 0, 2]]))
-        >>> print(p)
-        tensor([[1, 3, 4],
-                [2, 5, 6]], requires_grad=True)
+    Returns:
+        None
     """
-    if not isinstance(param, (nn.Parameter, torch.Tensor)):
-        raise ValueError("Input tensor must be an instance of `nn.Parameter` `torch.Tensor`.")
+    param.data.copy_(
+        torch.clone(
+            torch.index_select(param.data, dim, sorted_idx)
+        ).detach()
+    )
 
-    if dim >= param.dim() or dim < -param.dim():
-        raise ValueError(f"Invalid dimension index {dim} for tensor with shape {param.shape}")
 
-    # Use `index_select` to gather the sorted values along the specified dimension.
-    sorted_param = torch.index_select(param.data, dim, sorted_idx)
+def sort_norm(
+        norm,
+        sorted_idx: torch.Tensor
+) -> None:
+    # Sort the weight and bias parameters
+    sort_param(norm.weight, 0, sorted_idx)
+    sort_param(norm.bias, 0, sorted_idx)
 
-    # Replace the data of the original parameter tensor with the sorted data.
-    param.data.copy_(sorted_param.clone().detach())
+    # Sort the running_mean and running_var parameters if they exist in the layer
+    if hasattr(norm, 'running_mean'):
+        sort_param(norm.running_mean, 0, sorted_idx)
+    if hasattr(norm, 'running_var'):
+        sort_param(norm.running_var, 0, sorted_idx)
 
 
 def calc_importance(x: torch.Tensor, dim: Union[int, Tuple[int], List[int]]) -> torch.Tensor:
@@ -133,3 +134,14 @@ def calc_importance(x: torch.Tensor, dim: Union[int, Tuple[int], List[int]]) -> 
     sorted_idx = torch.argsort(importance, descending=True)
 
     return sorted_idx
+
+
+def groups_sorted_idx(sorted_index, channel_index):
+    index_list = []
+    channel_index = channel_index.cumsum(0)
+    for start, end in zip([0] + channel_index[:-1].tolist(), channel_index.tolist()):
+        select_index = sorted_index[(sorted_index >= start) & (sorted_index < end)]
+        select_index = select_index - select_index.min()
+        index_list.append(select_index)
+
+    return index_list

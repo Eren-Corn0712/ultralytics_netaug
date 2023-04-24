@@ -356,7 +356,9 @@ class DynamicSPPF(SPPF, DynamicModule):
         self.cv2.set_active(c_ * 4, c2)
 
     def sort_channels(self):
-        pass
+        sorted_idx = calc_importance(self.cv2.conv.weight[:, :self.c_, ...], dim=(0, 2, 3))  # sort channel in
+        sort_param(self.cv1.conv.weight, dim=0, sorted_idx=sorted_idx)
+        sort_norm(self.cv1.bn, sorted_idx=sorted_idx)
 
     def export_module(self) -> SPPF:
         module = SPPF.__new__(SPPF)
@@ -408,13 +410,8 @@ class DynamicDetect(Detect, DynamicModule):
             m[2].active_out_channels = self.nc
 
     def sort_channels(self):
-        for m in self.cv2:
-            m[0].sort_channels()
-            m[1].sort_channels()
-
-        for m in self.cv3:
-            m[0].sort_channels()
-            m[1].sort_channels()
+        # TODO: Complete this part.
+        pass
 
     def export_module(self) -> Detect:
         module = Detect.__new__(Detect)

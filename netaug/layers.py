@@ -91,6 +91,8 @@ class DynamicConv2d(DynamicModule, nn.Conv2d):
         return self.bias[: self.active_out_channels].contiguous()
 
     def forward(self, input: Tensor) -> Tensor:
+        if self.active_in_channels != input.shape[1]:
+            raise ValueError("")
         self.active_in_channels = input.shape[1]
         return self._conv_forward(input, self.active_weight, self.active_bias)
 
@@ -321,6 +323,7 @@ class DynamicC2f(C2f, DynamicModule):
 
     def sort_channels(self):
         sorted_idx = calc_importance(self.cv2.conv.weight, dim=(0, 2, 3))  # sorted idx size is (2+n) * self.c
+
         channel_index = [self.cv1.get_out_channels] + [m.cv2.get_out_channels for m in self.m]
 
         group_sorted_idx = groups_sorted_idx(sorted_idx, torch.tensor(channel_index))

@@ -87,12 +87,12 @@ class TestNetAug(object):
         netaug_detection_model = NetAugDetectionModel(CFG, max_depth=4.0)
         netaug_detection_model.sort_channels()
 
-    def _test_detection_aug_model(self):
+    def test_detection_aug_model(self):
         netaug_detection_model = NetAugDetectionModel(CFG)
         x = torch.ones(1, 3, 640, 640).cuda()
         netaug_detection_model = netaug_detection_model.cuda()
-        for _ in range(1):
-            netaug_detection_model.set_active(netaug_detection_model.aug_width)
+        for _ in range(5):
+            netaug_detection_model.set_aug()
             y = netaug_detection_model(x)
             y = sum([z.sum() for z in y])
             y.backward(torch.ones_like(y))
@@ -100,7 +100,7 @@ class TestNetAug(object):
             netaug_detection_model.zero_grad()
 
             print("Base nodel")
-            netaug_detection_model.set_active(netaug_detection_model.aug_width[0])
+            netaug_detection_model.set_base()
             y = netaug_detection_model(x)
             y = sum([z.sum() for z in y])
             y.backward(torch.ones_like(y))

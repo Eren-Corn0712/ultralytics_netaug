@@ -102,7 +102,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
 
 
 class NetAugDetectionModel(DetectionModel):
-    def __init__(self, cfg='yolov8n.yaml', ch=3, nc=None, verbose=True, max_width=1.5, max_depth=1, num_points=3):
+    def __init__(self, cfg='yolov8n.yaml', ch=3, nc=None, verbose=True, max_width=4.0, max_depth=1, num_points=5):
         super().__init__(cfg, ch, nc, verbose)
         # For dynamic model attribute
         self.max_width = max_width
@@ -227,6 +227,12 @@ class NetAugDetectionModel(DetectionModel):
                 ch = []
             ch.append(c2)
         return ch
+
+    def set_base(self):
+        self.set_active(self.aug_width[0])
+
+    def set_aug(self):
+        self.set_active(self.aug_width[1:])
 
     def export_module(self, verbose=False) -> DetectionModel:
         module = DetectionModel.__new__(DetectionModel)

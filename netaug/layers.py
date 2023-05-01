@@ -103,6 +103,9 @@ class DynamicConv2d(DynamicModule, nn.Conv2d):
             self.bias is not None, self.padding_mode
         )
         module.load_state_dict(self.active_state_dict())
+
+        # Attach attribute, exclude dynamic module attribute
+        copy_attr(module, self, exclude=("active_in_channels", "active_out_channels"))
         return module
 
     def active_state_dict(self):
@@ -213,6 +216,9 @@ class DynamicBatchNorm2d(DynamicModule, nn.BatchNorm2d):
             self.active_num_features, self.eps, self.momentum, self.affine, self.track_running_stats
         )
         module.load_state_dict(self.active_state_dict())
+
+        # Attach attribute, exclude dynamic module attribute
+        copy_attr(module, self, exclude=("active_num_features",))
         return module
 
     def active_state_dict(self):
@@ -238,6 +244,8 @@ class DynamicConv(Conv, DynamicModule):
     def export_module(self) -> Conv:
         module = Conv.__new__(Conv)
         nn.Module.__init__(module)
+
+        # Attach attribute, exclude dynamic module attribute
         copy_attr(module, self, exclude=("conv", "bn", "act"))
         module.conv = self.conv.export_module()
         module.bn = self.bn.export_module()
@@ -274,6 +282,8 @@ class DynamicBottleneck(Bottleneck, DynamicModule):
     def export_module(self) -> Bottleneck:
         module = Bottleneck.__new__(Bottleneck)
         nn.Module.__init__(module)
+
+        # Attach attribute, exclude dynamic module attribute
         copy_attr(module, self, exclude=("cv1", "cv2", "add", "e", "shortcut", "c_"))
         module.cv1 = self.cv1.export_module()
         module.cv2 = self.cv2.export_module()
@@ -314,6 +324,8 @@ class DynamicC2f(C2f, DynamicModule):
     def export_module(self) -> C2f:
         module = C2f.__new__(C2f)
         nn.Module.__init__(module)
+
+        # Attach attribute, exclude dynamic module attribute
         copy_attr(module, self, exclude=("cv1", "cv2", "m", "n", "e"))
         module.cv1 = self.cv1.export_module()
         module.cv2 = self.cv2.export_module()
@@ -366,6 +378,8 @@ class DynamicSPPF(SPPF, DynamicModule):
     def export_module(self) -> SPPF:
         module = SPPF.__new__(SPPF)
         nn.Module.__init__(module)
+
+        # Attach attribute, exclude dynamic module attribute
         copy_attr(module, self, exclude=("cv1", "cv2", "m", "c_"))
         module.cv1 = self.cv1.export_module()
         module.cv2 = self.cv2.export_module()

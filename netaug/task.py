@@ -232,16 +232,19 @@ class NetAugDetectionModel(DetectionModel):
         self.set_active(self.aug_width[0])
 
     def set_aug(self):
+        # TODO: Protect mechanism
         self.set_active(self.aug_width[1:])
 
     def export_module(self, verbose=False) -> DetectionModel:
         module = DetectionModel.__new__(DetectionModel)
         nn.Module.__init__(module)
         copy_attr(module, self, exclude=("model", "max_width", "max_depth", "ch", "aug_width"))
+
         # Attach yaml
         module.yaml_file = module.yaml['yaml_file']
-        # set active
-        self.set_active(self.aug_width[0])
+
+        # set model to base model
+        self.set_base()
         export_m = []
         for m in self.model.children():
             if hasattr(m, "export_module"):

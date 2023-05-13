@@ -29,8 +29,12 @@ class NetAugTrainer(DetectionTrainer):
     def __init__(self, cfg=DEFAULT_CFG, overrides=None):
         super().__init__(cfg, overrides)
 
+        self.best_aug_model = self.wdir / 'aug_best.pt'
+        self.last_aug_model = self.wdir / 'aug_last.pt'
+
     def get_model(self, cfg=None, weights=None, verbose=True):
-        model = NetAugDetectionModel(cfg, nc=self.data['nc'], verbose=verbose and RANK == -1,
+        model = NetAugDetectionModel(cfg, nc=self.data['nc'],
+                                     verbose=verbose and RANK == -1,
                                      max_width=self.args.max_width,
                                      max_depth=self.args.max_depth,
                                      num_points=self.args.num_points)
@@ -192,11 +196,10 @@ class NetAugTrainer(DetectionTrainer):
         self.run_callbacks('teardown')
 
     def save_model(self):
-        model = de_parallel(self.model).export_module()
         ckpt = {
             'epoch': self.epoch,
             'best_fitness': self.best_fitness,
-            'model': deepcopy(de_parallel(model)).half(),
+            'model': deepcopy(de_parallel(self.model).export_module()).half(),
             'ema': deepcopy(self.ema.ema.export_module()).half(),
             'updates': self.ema.updates,
             'optimizer': self.optimizer.state_dict(),
@@ -210,11 +213,32 @@ class NetAugTrainer(DetectionTrainer):
             torch.save(ckpt, self.best)
         if (self.epoch > 0) and (self.save_period > 0) and (self.epoch % self.save_period == 0):
             torch.save(ckpt, self.wdir / f'epoch{self.epoch}.pt')
-        del ckpt, model
+        del ckpt
+
+        ckpt = {
+            'epoch': self.epoch,
+            'best_fitness': self.best_fitness,
+            'model': deepcopy(de_parallel(self.model)).half(),
+            'ema': deepcopy(self.ema.ema).half(),
+            'updates': self.ema.updates,
+            'optimizer': self.optimizer.state_dict(),
+            'train_args': vars(self.args),  # save as dict
+            'date': datetime.now().isoformat(),
+            'version': __version__}
+        # Save last, best and delete
+        torch.save(ckpt, self.last_aug_model)
+        if self.best_fitness == self.fitness:
+            torch.save(ckpt, self.best_aug_model)
+        del ckpt
 
     @smart_inference_mode()
     def reset_batch_norm(self) -> None:
+        # Set model and ema model to eval model and set base
+        self.model.eval()
         self.ema.ema.eval()
+        self.model.set_base()
+        self.ema.ema.set_base()
+
         temp_model = deepcopy(self.ema.ema)
 
         bn_mean, bn_var = {}, {}
@@ -247,14 +271,14 @@ class NetAugTrainer(DetectionTrainer):
                         fea_dim = batch_mean.shape[0]
 
                         return F.batch_norm(
-                            x,
-                            batch_mean,
-                            batch_var,
-                            batch_norm_layer.weight[:fea_dim].to(x.dtype),
-                            batch_norm_layer.bias[:fea_dim].to(x.dtype),
-                            False,
-                            0.0,
-                            batch_norm_layer.eps,
+                            input=x,
+                            running_mean=batch_mean,
+                            running_var=batch_var,
+                            weight=batch_norm_layer.weight[:fea_dim].to(x.dtype),
+                            bias=batch_norm_layer.bias[:fea_dim].to(x.dtype),
+                            training=False,
+                            momentum=batch_norm_layer.momentum,
+                            eps=batch_norm_layer.eps,
                         )
 
                     return lambda_forward
@@ -267,7 +291,7 @@ class NetAugTrainer(DetectionTrainer):
 
         pbar = enumerate(self.train_loader)
         # Update dataloader attributes (optional)
-        LOGGER.info("\n%11s" % "Starting the Reset Batch norm!, Closing dataloader Data Augmentation")
+        LOGGER.info("%11s" % "Starting the Reset Batch norm!, Closing dataloader Data Augmentation")
 
         if hasattr(self.train_loader.dataset, 'augment'):
             self.train_loader.dataset.augment = False
@@ -288,7 +312,15 @@ class NetAugTrainer(DetectionTrainer):
                     (f'{self.epoch + 1}/{self.epochs}', mem, batch['cls'].shape[0], batch['img'].shape[-1])
                 )
 
+        # Revise ema model
         for name, m in self.ema.ema.named_modules():
+            if name in bn_mean and bn_mean[name].count > 0:
+                feature_dim = bn_mean[name].avg.size(0)
+                assert isinstance(m, _BatchNorm)
+                m.running_mean.data[:feature_dim].copy_(bn_mean[name].avg.clone().detach())
+                m.running_var.data[:feature_dim].copy_(bn_var[name].avg.clone().detach())
+        # Revise model
+        for name, m in self.model.named_modules():
             if name in bn_mean and bn_mean[name].count > 0:
                 feature_dim = bn_mean[name].avg.size(0)
                 assert isinstance(m, _BatchNorm)
@@ -296,7 +328,8 @@ class NetAugTrainer(DetectionTrainer):
                 m.running_var.data[:feature_dim].copy_(bn_var[name].avg.clone().detach())
 
         if RANK in (-1, 0):
-            LOGGER.info("\nReset Batch Norm Successful.")
+            LOGGER.info("Reset Batch Norm Successful.")
+
         if hasattr(self.train_loader.dataset, 'augment'):
             self.train_loader.dataset.augment = True
             self.train_loader.dataset.transforms = self.train_loader.dataset.build_transforms(hyp=self.args)

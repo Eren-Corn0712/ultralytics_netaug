@@ -92,15 +92,23 @@ class DynamicConv2d(DynamicModule, nn.Conv2d):
 
     def forward(self, input: Tensor) -> Tensor:
         if self.active_in_channels != input.shape[1]:
-            raise ValueError("")
-        self.active_in_channels = input.shape[1]
+            raise ValueError("Your set active method has some bugs in Conv2d.")
+        # self.active_in_channels = input.shape[1]
+
+        # TODO: Implement Group Convolution version (Input parameter should modify)
         return self._conv_forward(input, self.active_weight, self.active_bias)
 
     def export_module(self) -> nn.Module:
         module = nn.Conv2d(
-            self.active_in_channels, self.active_out_channels,
-            self.kernel_size, self.stride, self.padding, self.dilation, self.groups,
-            self.bias is not None, self.padding_mode
+            in_channels=self.active_in_channels,
+            out_channels=self.active_out_channels,
+            kernel_size=self.kernel_size,
+            stride=self.stride,
+            padding=self.padding,
+            dilation=self.dilation,
+            groups=self.groups,
+            bias=self.bias is not None,
+            padding_mode=self.padding_mode
         )
         module.load_state_dict(self.active_state_dict())
 
@@ -166,8 +174,9 @@ class DynamicBatchNorm2d(DynamicModule, nn.BatchNorm2d):
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         self._check_input_dim(input)
-
-        self.active_num_features = input.shape[1]
+        if self.active_num_features != input.shape[1]:
+            raise ValueError("Your set active() method have some bug at batch-norm.")
+        # self.active_num_features = input.shape[1]
 
         # exponential_average_factor is set to self.momentum
         # (when it is available) only so that it gets updated
@@ -201,19 +210,23 @@ class DynamicBatchNorm2d(DynamicModule, nn.BatchNorm2d):
         used for normalization (i.e. in eval mode when buffers are not None).
         """
         return F.batch_norm(
-            input,
-            self.active_running_mean if not self.training or self.track_running_stats else None,
-            self.active_running_var if not self.training or self.track_running_stats else None,
-            self.active_weight,
-            self.active_bias,
-            bn_training,
-            exponential_average_factor,
-            self.eps,
+            input=input,
+            running_mean=self.active_running_mean if not self.training or self.track_running_stats else None,
+            running_var=self.active_running_var if not self.training or self.track_running_stats else None,
+            weight=self.active_weight,
+            bias=self.active_bias,
+            training=bn_training,
+            momentum=exponential_average_factor,
+            eps=self.eps,
         )
 
     def export_module(self) -> nn.Module:
         module = nn.BatchNorm2d(
-            self.active_num_features, self.eps, self.momentum, self.affine, self.track_running_stats
+            num_features=self.active_num_features,
+            eps=self.eps,
+            momentum=self.momentum,
+            affine=self.affine,
+            track_running_stats=self.track_running_stats
         )
         module.load_state_dict(self.active_state_dict())
 
@@ -427,7 +440,6 @@ class DynamicDetect(Detect, DynamicModule):
             m[2].active_out_channels = self.nc
 
     def sort_channels(self):
-        # TODO: Complete this part.
         pass
 
     def export_module(self) -> Detect:

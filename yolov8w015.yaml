@@ -3,7 +3,7 @@
 # Parameters
 nc: 10  # number of classes
 depth_multiple: 0.33  # scales module repeat
-width_multiple: 0.075  # scales convolution channels
+width_multiple: 0.15  # scales convolution channels
 
 # YOLOv8.0n backbone
 backbone:
